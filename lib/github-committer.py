@@ -16,6 +16,7 @@ def main():
     repository = os.getenv('REPO_NAME')
     orig_ref = os.getenv('REF', branch)
     target_branch = os.getenv('TARGET_BRANCH')
+    token=os.getenv('GITHUB_TOKEN')
     file = os.getenv('FILE')
     file_path = os.path.join(directory, repository, file)
 
