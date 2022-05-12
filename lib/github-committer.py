@@ -8,63 +8,61 @@ from git import Repo
 
 def main():
 
-    branch = os.getenv('BRANCH')
-    build_id = os.getenv('BUILD_URL')
+    build_url = os.getenv('BUILD_URL')
     create_pull_request = os.getenv('CREATE_PULL_REQUEST')
+    pull_request_branch = os.getenv('PULL_REQUEST_BRANCH')
     directory = os.getenv('WORKING_DIRECTORY')
     organization = os.getenv('REPO_OWNER')
     repository = os.getenv('REPO_NAME')
-    orig_ref = os.getenv('REF', branch)
     target_branch = os.getenv('TARGET_BRANCH')
-    token=os.getenv('GITHUB_TOKEN')
+    target_file_path_prefix = os.getenv('TARGET_FILE_PATH_PREFIX')
+    token = os.getenv('GITHUB_TOKEN')
     file = os.getenv('FILE')
-    file_path = os.path.join(directory, repository, file)
+    file_path = os.path.join(directory, file)
+    target_file_path = os.path.join(target_file_path_prefix, file)
+    feature_branch = target_branch
 
-    # Fetch GIT Creedentials
-
-    repo_dir = os.path.join(directory, repository)
+    # Set GitHub repository
     repo = '{}/{}'.format(organization, repository)
 
     # PyGitHub Auth
     g = Github(token)
 
-    # Set repository
+    # Connect to GitHub repository
+    print('Connecting to repository: {}'.format(repo))
     repo = g.get_repo(repo)
 
-    # Create commit
-    target_file = (file)
+    commit_message = 'Promoting Changes To: {} Promotion Build: {}'.format(file, build_url)
 
-    commit_message = 'Commit created by Codefresh Build: {}'.format(build_id)
+    if create_pull_request:
+        # Check for PR branch
+        print('Checking for Branch: {}...'.format(pull_request_branch))
+        feature_branch = pull_request_branch
+        try:
+            repo.get_branch(branch=pull_request_branch)
+        except:
+            print('Branch NOT Found')
+            # Get target branch's latest SHA
+            target_contents = repo.get_branch(target_branch)
+            print('Creating Branch {} using SHA {}'.format(pull_request_branch, target_contents.commit.sha))
+            # Create branch
+            repo.create_git_ref(ref='refs/heads/' + pull_request_branch, sha=target_contents.commit.sha)
+            pass
 
-    original_contents = repo.get_contents(target_file, ref=orig_ref)
+    print('Gathering Target File {} for Target Branch {}'.format(file, feature_branch))
+    original_contents = repo.get_contents(target_file_path, ref=feature_branch)
 
     new_contents = open(file_path, 'r').read()
 
-    repo.update_file(original_contents.path, commit_message, new_contents, original_contents.sha, branch=branch)
+    # Update File
+    print('Updating {} on Branch {}'.format(original_contents.path, feature_branch))
+    repo.update_file(original_contents.path, commit_message, new_contents, original_contents.sha, branch=feature_branch)
 
-    # Basic Auth option for later
-    # else:
-    #     # Set repository
-    #     repo = Repo(repo_dir)
-
-    #     repo.git.checkout(branch)
-
-    #     # Create commit
-    #     file_list = [
-    #         os.path.join(repo_dir, file)
-    #     ]
-    #     commit_message = 'Commit created by Codefresh Build: {}'.formatbuild_id)
-    #     repo.index.add(file_list)
-    #     repo.index.commit(commit_message)
-
-    #     # Push commit
-    #     origin = repo.remote('origin')
-    #     origin.push()
-
+    # Pull Request
     if create_pull_request:
         # Check for existing/open pull request
         print('Checking for Open Pull Request...')
-        check_for_prs = repo.get_pulls(state='open', head=branch, base=target_branch)
+        check_for_prs = repo.get_pulls(state='open', head=feature_branch, base=target_branch)
         if check_for_prs.totalCount != 0:
             for pr in check_for_prs:
                 print('Found Open Pull Request.')
@@ -73,11 +71,10 @@ def main():
         else:
             print('Opening Pull Request.')
             # Create pull request
-            create_pull = repo.create_pull(title='Pull Request from GitOps Committer Step, Build ID: {}'.format(build_id), head=branch, base=target_branch, body='Automated Pull Request from Jenkins Build: {}'.format(build_id), maintainer_can_modify=True)
+            create_pull = repo.create_pull(title='Pull Request from GitOps Step, Build URL: {}'.format(build_url), head=feature_branch, base=target_branch, body='Automated Pull Request from Build: {}'.format(build_url), maintainer_can_modify=True)
 
             # Get pull request information
             print('Created Pull Request: {}'.format(repo.get_pull(create_pull.number)))
-
 
 if __name__ == "__main__":
     main()

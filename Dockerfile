@@ -10,8 +10,7 @@ RUN apk update && \
         gcc \
         libc-dev \
         libffi-dev \
-        git \
-        jsonnet && \
+        git && \
     pip install PyGithub GitPython requests
 
 COPY lib/github-committer.py /github-committer.py
