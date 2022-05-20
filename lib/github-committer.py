@@ -62,7 +62,7 @@ def main():
     if create_pull_request:
         # Check for existing/open pull request
         print('Checking for Open Pull Request...')
-        check_for_prs = repo.get_pulls(state='open', head=feature_branch, base=target_branch)
+        check_for_prs = repo.get_pulls(state='open', head=pull_request_branch, base=target_branch)
         if check_for_prs.totalCount != 0:
             for pr in check_for_prs:
                 print('Found Open Pull Request.')
@@ -71,7 +71,7 @@ def main():
         else:
             print('Opening Pull Request.')
             # Create pull request
-            create_pull = repo.create_pull(title='Pull Request from GitOps Step, Build URL: {}'.format(build_url), head=feature_branch, base=target_branch, body='Automated Pull Request from Build: {}'.format(build_url), maintainer_can_modify=True)
+            create_pull = repo.create_pull(title='Pull Request from GitOps Step, Build URL: {}'.format(build_url), head=pull_request_branch, base=target_branch, body='Automated Pull Request from Build: {}'.format(build_url), maintainer_can_modify=True)
 
             # Get pull request information
             print('Created Pull Request: {}'.format(repo.get_pull(create_pull.number)))
