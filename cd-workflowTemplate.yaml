@@ -1,0 +1,144 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: dvb.cd.0.0.1
+spec:
+  entrypoint: deploy-and-promote
+  serviceAccountName: dvb.cd.0.0.1
+  templates:
+    - name: deploy-and-promote
+      inputs:
+        parameters:
+          - name: GIT_BRANCH
+          - name: GIT_REPO_NAME
+          - name: GIT_REPO_OWNER
+          - name: GIT_REPO_URL
+          - name: PROMOTION_TARGET_FILE
+          - name: TARGET_DEPLOYMENT_BRANCH
+          - name: TARGET_DEPLOYMENT_REPO_NAME
+          - name: TARGET_DEPLOYMENT_REPO_URL
+          - name: TARGET_FILE_PATH_PREFIX
+          - name: GIT_TOKEN_SECRET
+            default: 'github-token'
+          - name: KEY
+          - name: VALUE
+      dag:
+        tasks:
+          # Clone Target Repository
+          - name: clone-target-repo
+            templateRef:
+              name: argo-hub.git.0.0.2
+              template: clone
+            arguments:
+              parameters:
+                - name: REPO_URL
+                  value: '{{ inputs.parameters.TARGET_DEPLOYMENT_REPO_URL }}'
+                - name: REVISION
+                  value: '{{ inputs.parameters.TARGET_DEPLOYMENT_BRANCH }}'
+                - name: GIT_TOKEN_SECRET
+                  value: '{{ inputs.parameters.GIT_TOKEN_SECRET }}'
+          # Promote Candidate Image
+          - name: promote-candidate
+            template: promote-candidate
+            arguments:
+              parameters:
+                - name: KEY
+                  value: '{{ inputs.parameters.KEY }}'
+                - name: VALUE
+                  value: '{{ inputs.parameters.VALUE }}'
+                - name: FILE
+                  value: '{{ inputs.parameters.PROMOTION_TARGET_FILE }}'
+                - name: TARGET_FILE_PATH_PREFIX
+                  value: '{{ inputs.parameters.TARGET_FILE_PATH_PREFIX }}'
+              artifacts:
+                - name: repo
+                  from: '{{ tasks.clone-target-repo.outputs.artifacts.repo }}'
+            depends: clone-target-repo
+          # GitOps Promote Candidate Image
+          - name: gitops-promotion
+            template: gitops-promotion
+            arguments:
+              parameters:
+                - name: GIT_TOKEN_SECRET
+                  value: '{{ inputs.parameters.GIT_TOKEN_SECRET }}'
+                - name: FILE
+                  value: '{{ inputs.parameters.PROMOTION_TARGET_FILE }}'
+                - name: TARGET_FILE_PATH_PREFIX
+                  value: '{{ inputs.parameters.TARGET_FILE_PATH_PREFIX }}'
+                - name: GIT_BRANCH
+                  value: '{{ inputs.parameters.GIT_BRANCH }}'
+                - name: GIT_REPO_NAME
+                  value: '{{ inputs.parameters.GIT_REPO_NAME }}'
+                - name: GIT_REPO_OWNER
+                  value: '{{ inputs.parameters.GIT_REPO_OWNER }}'
+              artifacts:
+                - name: repo
+                  from: '{{ tasks.promote-candidate.outputs.artifacts.repo }}'
+            depends: promote-candidate
+    # Promote Candidate Image
+    - name: promote-candidate
+      inputs:
+        artifacts:
+          - name: repo
+            path: /tmp/repo
+        parameters:
+          - name: KEY
+            value: '{{ inputs.parameters.KEY }}'
+          - name: VALUE
+            value: '{{ inputs.parameters.VALUE }}'
+          - name: TARGET_FILE_PATH_PREFIX
+            value: '{{ inputs.parameters.TARGET_FILE_PATH_PREFIX }}'
+          - name: FILE
+            value: '{{ inputs.parameters.FILE }}'
+      outputs:
+        artifacts:
+          - name: repo
+            path: /tmp/repo
+      script:
+        image: 'quay.io/codefresh/cli'
+        command: [sh]
+        source: |
+          yq -i -y '{{ inputs.parameters.KEY }}="{{ inputs.parameters.VALUE }}"' {{ inputs.artifacts.repo.path }}/{{ inputs.parameters.TARGET_FILE_PATH_PREFIX }}/{{ inputs.parameters.FILE }}
+    # GitOps Promote Candidate Image
+    - name: gitops-promotion
+      inputs:
+        artifacts:
+          - name: repo
+            path: /tmp/repo
+        parameters:
+          - name: GIT_TOKEN_SECRET
+            value: '{{ inputs.parameters.GIT_TOKEN_SECRET }}'
+          - name: FILE
+            value: '{{ inputs.parameters.FILE }}'
+          - name: TARGET_FILE_PATH_PREFIX
+            value: '{{ inputs.parameters.TARGET_FILE_PATH_PREFIX }}'
+          - name: GIT_REPO_OWNER
+            value: '{{ inputs.parameters.GIT_REPO_OWNER }}'
+          - name: GIT_REPO_NAME
+            value: '{{ inputs.parameters.GIT_REPO_NAME }}'
+          - name: GIT_BRANCH
+            value: '{{ inputs.parameters.GIT_BRANCH }}'
+      container:
+        image: 'dustinvanbuskirk/github-automation-committer:1.0.0'
+        env:
+          - name: TARGET_BRANCH
+            value: '{{ inputs.parameters.GIT_BRANCH }}'
+          - name: TARGET_FILE_PATH_PREFIX
+            value: '{{ inputs.parameters.TARGET_FILE_PATH_PREFIX }}'
+          - name: BUILD_URL
+            value: 'https://g.codefresh.io/2.0/workflows/{{ workflow.name }}'
+          - name: WORKING_DIRECTORY
+            value: '{{ inputs.artifacts.repo.path }}/{{ inputs.parameters.TARGET_FILE_PATH_PREFIX }}'
+          - name: REPO_OWNER
+            value: '{{ inputs.parameters.GIT_REPO_OWNER }}'
+          - name: REPO_NAME
+            value: '{{ inputs.parameters.GIT_REPO_NAME }}'
+          - name: GITHUB_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: '{{ inputs.parameters.GIT_TOKEN_SECRET }}'
+                key: token
+          - name: FILE
+            value: '{{ inputs.parameters.FILE }}'
+        command: [python3]
+        args: [/github-committer.py]
